@@ -1,35 +1,7 @@
+
 # CLAUDE.md
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
-
-## Critical Development Workflow
-
-**IMPORTANT**: When receiving any command or task request:
-
-1. **Always start from main branch**: Switch to main branch before starting any work
-2. **Create new branch**: Always create a new branch with descriptive name (preferably with `claudecode/` prefix)
-3. **Work in feature branch**: Perform all tasks and changes in the feature branch
-4. **Create PR when complete**: Once work is finished, create a pull request
-5. **Return to main**: After PR creation, always switch back to main branch
-
-### Workflow Commands
-```bash
-# 1. Switch to main branch
-git checkout main
-
-# 2. Create new feature branch 
-git checkout -b claudecode/feature-description
-
-# 3. Do your work...
-# (make changes, commits, etc.)
-
-# 4. Push and create PR
-git push -u origin claudecode/feature-description
-gh pr create --title "Title" --body "Description"
-
-# 5. Return to main branch
-git checkout main
-```
 
 ## Project Overview
 
