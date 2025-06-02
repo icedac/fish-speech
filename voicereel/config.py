@@ -49,6 +49,12 @@ class VoiceReelConfig:
         "/tmp/voicereel_audio"
     )
     
+    # S3 Storage settings
+    S3_BUCKET_NAME: str = os.getenv("VOICEREEL_S3_BUCKET", "voicereel-audio")
+    S3_USE_LOCAL_FALLBACK: bool = os.getenv("VOICEREEL_S3_FALLBACK", "true").lower() == "true"
+    S3_DEFAULT_EXPIRES_HOURS: int = int(os.getenv("VOICEREEL_S3_EXPIRES_HOURS", "48"))
+    S3_PRESIGNED_URL_EXPIRES: int = int(os.getenv("VOICEREEL_S3_PRESIGNED_EXPIRES", "900"))  # 15 minutes
+    
     # Model download URLs (for automatic setup)
     MODEL_DOWNLOAD_URLS = {
         "llama": "https://huggingface.co/fishaudio/fish-speech-1.5/resolve/main/text2semantic-finetune-medium-en+de+zh+ja+ko-2.pth",

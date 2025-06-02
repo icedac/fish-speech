@@ -13,6 +13,7 @@ from datetime import datetime
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
 from .caption import export_captions
+from .s3_storage import get_storage_manager, parse_storage_url
 
 # Try to import Celery tasks
 try:
@@ -486,10 +487,27 @@ class VoiceReelServer:
     # Helper methods
     # ------------------------------------------------------------------
     def _presign_path(self, path: str | None) -> str | None:
+        """Generate presigned URL for storage path."""
         if not path:
             return None
-        expiry = int(time.time()) + self.PRESIGNED_TTL
-        return f"{path}?expires={expiry}"
+        
+        try:
+            storage_manager = get_storage_manager()
+            storage_type, key = parse_storage_url(path)
+            
+            if storage_type == "s3":
+                # Generate S3 presigned URL
+                return storage_manager.generate_presigned_url(
+                    key, expires_in=self.PRESIGNED_TTL
+                )
+            else:
+                # For local files, return the file:// URL directly
+                return path
+                
+        except Exception as e:
+            # Fallback to simple expiry parameter for backward compatibility
+            expiry = int(time.time()) + self.PRESIGNED_TTL
+            return f"{path}?expires={expiry}"
 
     def cleanup_old_files(self, max_age_hours: float = 48) -> None:
         cutoff = time.time() - max_age_hours * 3600
