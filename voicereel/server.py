@@ -362,6 +362,8 @@ class VoiceReelServer:
                     # Queue the synthesis task
                     if server.use_celery:
                         # Use Celery for async processing
+                        output_format = payload.get("output_format", "wav")
+                        sample_rate = payload.get("sample_rate", 48000)
                         celery_synthesize.delay(
                             job_id, script, output_format, sample_rate, caption_format
                         )

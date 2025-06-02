@@ -3,11 +3,11 @@
 ## 🔴 Critical Priority (MVP 필수)
 
 ### 1. Celery/Redis 작업 큐 구현
-- [ ] Redis 서버 연동 설정 추가
-- [ ] Celery worker 구현
-- [ ] 기존 인메모리 큐를 Celery 태스크로 마이그레이션
-- [ ] 작업 상태 Redis에 저장
-- [ ] 작업 재시도 로직 구현
+- [x] Redis 서버 연동 설정 추가
+- [x] Celery worker 구현
+- [x] 기존 인메모리 큐를 Celery 태스크로 마이그레이션
+- [x] 작업 상태 Redis에 저장
+- [x] 작업 재시도 로직 구현
 
 ### 2. Fish-Speech 엔진 통합
 - [ ] fish_speech 모델 로더 구현
@@ -33,11 +33,11 @@
 - [ ] 입력 데이터 검증 강화
 
 ### 5. Docker 컨테이너화
-- [ ] VoiceReel API Dockerfile 작성
-- [ ] docker-compose.yml 구성 (API + Redis + PostgreSQL)
-- [ ] GPU 지원 Docker 이미지 빌드
-- [ ] 환경별 설정 분리 (.env 파일)
-- [ ] Health check 엔드포인트 추가
+- [x] VoiceReel API Dockerfile 작성
+- [x] docker-compose.yml 구성 (API + Redis + PostgreSQL)
+- [x] GPU 지원 Docker 이미지 빌드
+- [x] 환경별 설정 분리 (.env 파일)
+- [x] Health check 엔드포인트 추가
 
 ### 6. 에러 처리 및 로깅
 - [ ] 구조화된 로깅 시스템 (JSON 로그)
@@ -98,7 +98,7 @@
 
 ## 📊 진행 상태
 
-**전체 진행률: 15% (18/120 작업 완료)**
+**전체 진행률: 23% (28/120 작업 완료)**
 
 ### 완료된 작업 ✅
 - [x] Flask 애플리케이션 구조
@@ -119,13 +119,25 @@
 - [x] HMAC 서명 검증
 - [x] 사용량 통계 수집
 - [x] Presigned URL (로컬)
+- [x] Redis 서버 연동 설정 추가
+- [x] Celery worker 구현
+- [x] 기존 인메모리 큐를 Celery 태스크로 마이그레이션
+- [x] 작업 상태 Redis에 저장
+- [x] 작업 재시도 로직 구현
+- [x] VoiceReel API Dockerfile 작성
+- [x] docker-compose.yml 구성 (API + Redis + PostgreSQL)
+- [x] GPU 지원 Docker 이미지 빌드
+- [x] 환경별 설정 분리 (.env 파일)
+- [x] Health check 엔드포인트 추가
 
 ### 다음 스프린트 목표 (2주)
-1. Celery/Redis 통합 완료
+1. ✅ Celery/Redis 통합 완료
 2. Fish-Speech 엔진 기본 연동
-3. Docker 컨테이너 구성
+3. ✅ Docker 컨테이너 구성
 4. 기본 에러 처리 구현
+5. S3 스토리지 연동
+6. 보안 강화 (TLS, CORS, Rate limiting)
 
 ---
 
-*마지막 업데이트: 2025-02-06*
+*마지막 업데이트: 2025-06-03*
