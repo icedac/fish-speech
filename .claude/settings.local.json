@@ -11,7 +11,9 @@
       "Bash(python -m pytest tests/test_voicereel_e2e.py -v)",
       "Bash(pip install:*)",
       "Bash(python -m pytest tests/test_voicereel_infra.py -v)",
-      "Bash(git stash:*)"
+      "Bash(git stash:*)",
+      "Bash(git add:*)",
+      "Bash(git rebase:*)"
     ],
     "deny": []
   }
