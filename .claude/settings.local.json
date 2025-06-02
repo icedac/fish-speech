@@ -13,7 +13,10 @@
       "Bash(python -m pytest tests/test_voicereel_infra.py -v)",
       "Bash(git stash:*)",
       "Bash(git add:*)",
-      "Bash(git rebase:*)"
+      "Bash(git rebase:*)",
+      "Bash(gh pr checks:*)",
+      "Bash(gh pr merge:*)",
+      "Bash(gh pr view:*)"
     ],
     "deny": []
   }
