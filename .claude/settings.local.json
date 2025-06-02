@@ -18,7 +18,10 @@
       "Bash(gh pr merge:*)",
       "Bash(gh pr view:*)",
       "Bash(git merge:*)",
-      "Bash(git commit:*)"
+      "Bash(git commit:*)",
+      "Bash(gh issue list:*)",
+      "Bash(git checkout:*)",
+      "Bash(chmod:*)"
     ],
     "deny": []
   }

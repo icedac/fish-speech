@@ -1,0 +1,136 @@
+version: '3.8'
+
+services:
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_USER: voicereel
+      POSTGRES_PASSWORD: voicereel_pass
+      POSTGRES_DB: voicereel
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U voicereel"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # VoiceReel API server
+  api:
+    build:
+      context: .
+      dockerfile: voicereel/Dockerfile
+    environment:
+      VR_DSN: "postgresql://voicereel:voicereel_pass@postgres:5432/voicereel"
+      VR_REDIS_URL: "redis://redis:6379/0"
+      VR_API_KEY: "${VR_API_KEY:-dev_api_key}"
+      VR_HMAC_SECRET: "${VR_HMAC_SECRET:-dev_hmac_secret}"
+    ports:
+      - "8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./voicereel:/app/voicereel
+      - ./fish_speech:/app/fish_speech
+      - audio_files:/tmp/voicereel_audio
+
+  # Celery worker for speaker registration
+  worker_speakers:
+    build:
+      context: .
+      dockerfile: voicereel/Dockerfile
+    command: python -m voicereel.worker --queue speakers --concurrency 2
+    environment:
+      VR_DSN: "postgresql://voicereel:voicereel_pass@postgres:5432/voicereel"
+      VR_REDIS_URL: "redis://redis:6379/0"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./voicereel:/app/voicereel
+      - ./fish_speech:/app/fish_speech
+      - audio_files:/tmp/voicereel_audio
+
+  # Celery worker for synthesis (GPU enabled in production)
+  worker_synthesis:
+    build:
+      context: .
+      dockerfile: voicereel/Dockerfile
+    command: python -m voicereel.worker --queue synthesis --concurrency 1
+    environment:
+      VR_DSN: "postgresql://voicereel:voicereel_pass@postgres:5432/voicereel"
+      VR_REDIS_URL: "redis://redis:6379/0"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./voicereel:/app/voicereel
+      - ./fish_speech:/app/fish_speech
+      - audio_files:/tmp/voicereel_audio
+    # Uncomment for GPU support
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: 1
+    #           capabilities: [gpu]
+
+  # Celery beat for scheduled tasks
+  beat:
+    build:
+      context: .
+      dockerfile: voicereel/Dockerfile
+    command: celery -A voicereel.celery_app beat --loglevel=info
+    environment:
+      VR_DSN: "postgresql://voicereel:voicereel_pass@postgres:5432/voicereel"
+      VR_REDIS_URL: "redis://redis:6379/0"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./voicereel:/app/voicereel
+
+  # Flower for monitoring (optional)
+  flower:
+    build:
+      context: .
+      dockerfile: voicereel/Dockerfile
+    command: celery -A voicereel.celery_app flower --port=5555
+    environment:
+      VR_REDIS_URL: "redis://redis:6379/0"
+    ports:
+      - "5555:5555"
+    depends_on:
+      - redis
+    volumes:
+      - ./voicereel:/app/voicereel
+
+volumes:
+  redis_data:
+  postgres_data:
+  audio_files:
