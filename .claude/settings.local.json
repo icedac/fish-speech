@@ -16,7 +16,8 @@
       "Bash(git rebase:*)",
       "Bash(gh pr checks:*)",
       "Bash(gh pr merge:*)",
-      "Bash(gh pr view:*)"
+      "Bash(gh pr view:*)",
+      "Bash(git merge:*)"
     ],
     "deny": []
   }
