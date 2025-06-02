@@ -50,6 +50,8 @@ dependencies = [
     "redis>=5.0.0",
     "psycopg2-binary>=2.9.0",
     "boto3>=1.28.0",
+    "soundfile>=0.12.1",
+    "loguru>=0.7.0",
 ]
 
 [project.optional-dependencies]

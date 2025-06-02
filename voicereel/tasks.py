@@ -7,14 +7,12 @@ from typing import Any, Dict, List
 
 from celery import Task
 from celery.exceptions import SoftTimeLimitExceeded
+from loguru import logger
 
 from .caption import export_captions
 from .celery_app import app
 from .db import init_db
-
-# Import fish_speech modules (will be integrated later)
-# from fish_speech.models.text2semantic.inference import generate_semantic_tokens
-# from fish_speech.models.vqgan.inference import synthesis
+from .fish_speech_integration import get_fish_speech_engine, get_speaker_manager
 
 
 class DatabaseTask(Task):
@@ -52,24 +50,39 @@ def register_speaker(
         cur.execute("UPDATE jobs SET status=? WHERE id=?", ("processing", job_id))
         self.db.commit()
 
-        # TODO: Integrate fish_speech feature extraction
-        # For now, simulate processing
-        time.sleep(2)
+        logger.info(f"Starting speaker registration for job {job_id}, speaker {speaker_id}")
 
-        # In production, this would:
-        # 1. Load the audio file
-        # 2. Extract acoustic features using fish_speech
-        # 3. Save speaker embeddings to database
-        # 4. Update speaker metadata
+        # Get Fish-Speech engine and speaker manager
+        engine = get_fish_speech_engine()
+        speaker_manager = get_speaker_manager()
+
+        # Extract speaker features from reference audio
+        if not os.path.exists(audio_path):
+            raise FileNotFoundError(f"Reference audio file not found: {audio_path}")
+
+        features = engine.extract_speaker_features(audio_path, script)
+        
+        # Save speaker features to storage
+        feature_path = speaker_manager.save_speaker_features(speaker_id, features)
+        
+        # Update database with feature path
+        cur.execute(
+            "UPDATE speakers SET metadata=? WHERE id=?", 
+            (feature_path, speaker_id)
+        )
 
         # Mark job as succeeded
         cur.execute("UPDATE jobs SET status=? WHERE id=?", ("succeeded", job_id))
         self.db.commit()
 
+        logger.info(f"Speaker registration completed for speaker {speaker_id}")
+        
         return {
             "status": "succeeded",
             "speaker_id": speaker_id,
             "features_extracted": True,
+            "feature_path": feature_path,
+            "audio_duration": features.get("audio_duration", 0),
         }
 
     except SoftTimeLimitExceeded:
@@ -116,40 +129,52 @@ def synthesize(
         cur.execute("UPDATE jobs SET status=? WHERE id=?", ("processing", job_id))
         self.db.commit()
 
-        # TODO: Integrate fish_speech synthesis
-        # For now, create dummy audio file
+        logger.info(f"Starting synthesis for job {job_id} with {len(script)} segments")
+
+        # Get Fish-Speech engine and speaker manager
+        engine = get_fish_speech_engine()
+        speaker_manager = get_speaker_manager()
+
+        # Load speaker features for all speakers in script
+        speaker_features = {}
+        unique_speakers = set(segment.get("speaker_id") for segment in script)
+        
+        for speaker_id in unique_speakers:
+            if not speaker_id:
+                continue
+            try:
+                # Extract numeric ID if speaker_id is string like "spk_1" 
+                if isinstance(speaker_id, str) and speaker_id.startswith("spk_"):
+                    numeric_id = int(speaker_id.split("_")[1])
+                else:
+                    numeric_id = int(speaker_id)
+                
+                features = speaker_manager.load_speaker_features(numeric_id)
+                speaker_features[speaker_id] = features
+                logger.info(f"Loaded features for speaker {speaker_id}")
+            except Exception as e:
+                logger.error(f"Failed to load features for speaker {speaker_id}: {e}")
+                raise ValueError(f"Speaker {speaker_id} not found or invalid")
+
+        # Synthesize speech using Fish-Speech
+        audio_data, caption_units = engine.synthesize_speech(
+            script=script,
+            speaker_features=speaker_features,
+            output_format=output_format,
+        )
+
+        # Save audio file
         audio_path = os.path.join(tempfile.gettempdir(), f"{job_id}.{output_format}")
-        with open(audio_path, "wb") as f:
-            # In production, this would:
-            # 1. Load speaker embeddings for each speaker_id
-            # 2. Generate semantic tokens for each text segment
-            # 3. Synthesize audio using VQGAN
-            # 4. Concatenate segments with proper timing
-            # 5. Export in requested format
-            f.write(b"FAKE_AUDIO_DATA")
-
-        # Generate captions with timing
-        caption_units = []
-        current_time = 0.0
-
-        for i, segment in enumerate(script):
-            # In production, timing would come from actual synthesis
-            duration = len(segment.get("text", "")) * 0.05  # Dummy timing
-            caption_units.append(
-                {
-                    "start": current_time,
-                    "end": current_time + duration,
-                    "speaker": segment.get("speaker_id"),
-                    "text": segment.get("text", ""),
-                }
-            )
-            current_time += duration + 0.1  # Add small pause
+        engine.save_audio(audio_data, audio_path, output_format)
 
         # Export captions
         caption_text = export_captions(caption_units, caption_format)
         caption_path = os.path.join(tempfile.gettempdir(), f"{job_id}.{caption_format}")
         with open(caption_path, "w", encoding="utf-8") as f:
             f.write(caption_text)
+
+        # Calculate total duration
+        total_duration = caption_units[-1]["end"] if caption_units else 0.0
 
         # Update job with results
         cur.execute(
@@ -160,18 +185,21 @@ def synthesize(
         )
 
         # Record usage
-        total_duration = current_time
         cur.execute(
             "INSERT INTO usage (ts, length) VALUES (datetime('now'), ?)",
             (total_duration,),
         )
         self.db.commit()
 
+        logger.info(f"Synthesis completed for job {job_id}. Duration: {total_duration:.2f}s")
+
         return {
             "status": "succeeded",
             "audio_path": audio_path,
             "caption_path": caption_path,
             "duration": total_duration,
+            "num_segments": len(script),
+            "speakers_used": list(unique_speakers),
         }
 
     except SoftTimeLimitExceeded:
