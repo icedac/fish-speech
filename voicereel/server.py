@@ -242,22 +242,48 @@ class VoiceReelServer:
                 if not self._require_key(raw):
                     return
                 if self.path == "/v1/speakers":
-                    try:
-                        payload = json.loads(raw.decode()) if raw else {}
-                    except json.JSONDecodeError:
-                        self._error(400, "INVALID_INPUT")
-                        return
+                    content_type = self.headers.get("Content-Type", "")
+                    
+                    if content_type.startswith("multipart/form-data"):
+                        # Handle multipart form upload
+                        try:
+                            from .multipart_parser import parse_multipart_form
+                            form_fields, file_paths = parse_multipart_form(raw, content_type)
+                            
+                            name = form_fields.get("name", "unknown")
+                            lang = form_fields.get("lang", "en")
+                            script = form_fields.get("reference_script", "")
+                            audio_path = file_paths.get("reference_audio")
+                            
+                            if not audio_path:
+                                self._error(400, "INVALID_INPUT")
+                                return
+                                
+                        except Exception as e:
+                            self._error(400, "INVALID_INPUT")
+                            return
+                    else:
+                        # Handle JSON payload (legacy)
+                        try:
+                            payload = json.loads(raw.decode()) if raw else {}
+                        except json.JSONDecodeError:
+                            self._error(400, "INVALID_INPUT")
+                            return
 
-                    duration = float(payload.get("duration", 0))
-                    script = payload.get("script", "")
-                    name = payload.get("name", "unknown")
-                    lang = payload.get("lang", "en")
-                    allowed_langs = {"en", "ko", "ja"}
+                        duration = float(payload.get("duration", 0))
+                        script = payload.get("script", "")
+                        name = payload.get("name", "unknown")
+                        lang = payload.get("lang", "en")
+                        audio_path = "dummy.wav"  # Dummy for backward compatibility
+                        
+                        if duration < 30:
+                            self._error(422, "INSUFFICIENT_REF")
+                            return
+
+                    # Validate inputs
+                    allowed_langs = {"en", "ko", "ja", "zh"}
                     if lang not in allowed_langs:
                         self._error(400, "INVALID_INPUT")
-                        return
-                    if duration < 30:
-                        self._error(422, "INSUFFICIENT_REF")
                         return
                     if not script:
                         self._error(400, "INVALID_INPUT")
@@ -289,9 +315,9 @@ class VoiceReelServer:
                         celery_register_speaker.delay(
                             job_id,
                             speaker_id,
-                            audio_path="dummy.wav",
-                            script=script,
-                            lang=lang,
+                            audio_path,
+                            script,
+                            lang,
                         )
                     else:
                         # Use in-memory queue
@@ -303,7 +329,7 @@ class VoiceReelServer:
                             "speaker_id": speaker_id,
                         }
                     ).encode()
-                    self.send_response(200)
+                    self.send_response(202)  # Accepted for async processing
                     self.send_header("Content-Type", "application/json")
                     self.end_headers()
                     self.wfile.write(body)
