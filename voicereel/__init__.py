@@ -1,6 +1,36 @@
 """VoiceReel package."""
 
+import os
+
 from .caption import export_captions
+
+# Configure logging on module import
+try:
+    from .json_logger import configure_json_logging, get_logger
+    
+    # Only configure if not already configured
+    if not hasattr(configure_json_logging, "_configured"):
+        configure_json_logging(
+            level=os.getenv("VR_LOG_LEVEL", "INFO"),
+            log_file=os.getenv("VR_LOG_FILE"),
+            enable_console=os.getenv("VR_LOG_CONSOLE", "true").lower() == "true",
+            enable_debug=os.getenv("VR_DEBUG", "false").lower() == "true",
+        )
+        configure_json_logging._configured = True
+        
+        # Log initialization
+        logger = get_logger("voicereel")
+        logger.info(
+            "VoiceReel initialized",
+            extra={
+                "version": "1.0.0",
+                "log_level": os.getenv("VR_LOG_LEVEL", "INFO"),
+                "debug_mode": os.getenv("VR_DEBUG", "false").lower() == "true",
+            }
+        )
+except ImportError:
+    # Logging not available yet
+    pass
 
 __all__ = [
     "VoiceReelClient",
