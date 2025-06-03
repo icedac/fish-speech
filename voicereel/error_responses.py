@@ -3,7 +3,7 @@
 import json
 import traceback
 from enum import Enum
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Tuple
 
 from loguru import logger
 
@@ -229,6 +229,8 @@ def handle_exception(
     
     # Add traceback in debug mode
     if include_traceback:
+        if "details" not in error_dict["error"]:
+            error_dict["error"]["details"] = {}
         error_dict["error"]["details"]["traceback"] = traceback.format_exc().split("\n")
     
     return error_dict, 500

@@ -101,7 +101,7 @@ def test_speaker_manager():
 
 @patch('voicereel.fish_speech_integration.load_text2semantic_model')
 @patch('voicereel.fish_speech_integration.load_vqgan_model')
-@patch('voicereel.fish_speech_integration.AutoTokenizer')
+@patch('voicereel.fish_speech_integration.FishTokenizer')
 def test_fish_speech_engine_init(mock_tokenizer, mock_vqgan, mock_llama, mock_torch):
     """Test Fish-Speech engine initialization."""
     from voicereel.fish_speech_integration import FishSpeechEngine
