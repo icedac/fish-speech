@@ -27,7 +27,13 @@ class VoiceReelConfig:
     # Device configuration
     DEVICE: str = os.getenv("FISH_SPEECH_DEVICE", "cuda" if os.system("nvidia-smi") == 0 else "cpu")
     PRECISION: str = os.getenv("FISH_SPEECH_PRECISION", "half")
-    COMPILE_MODEL: bool = os.getenv("FISH_SPEECH_COMPILE", "false").lower() == "true"
+    COMPILE_MODEL: bool = os.getenv("FISH_SPEECH_COMPILE", "true").lower() == "true"  # Default to true for performance
+    
+    # Performance optimization settings
+    USE_OPTIMIZED_ENGINE: bool = os.getenv("VOICEREEL_USE_OPTIMIZED", "true").lower() == "true"
+    PARALLEL_SYNTHESIS: bool = os.getenv("VOICEREEL_PARALLEL_SYNTHESIS", "true").lower() == "true"
+    MAX_WORKERS: int = int(os.getenv("VOICEREEL_MAX_WORKERS", "4"))
+    BATCH_SIZE: int = int(os.getenv("VOICEREEL_BATCH_SIZE", "0"))  # 0 = auto-detect
     
     # Audio settings
     SAMPLE_RATE: int = int(os.getenv("VOICEREEL_SAMPLE_RATE", "44100"))
