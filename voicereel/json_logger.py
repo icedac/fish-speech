@@ -127,6 +127,9 @@ class LoguruJSONSink:
             "module": record["module"],
         }
         
+        # Add extra fields
+        extra = record["extra"]
+        
         # Add exception info if present
         if record["exception"]:
             exc = record["exception"]
@@ -135,12 +138,28 @@ class LoguruJSONSink:
                 "message": str(exc.value) if exc.value else "",
                 "traceback": exc.traceback.split('\n') if exc.traceback else [],
             }
-        
-        # Add extra fields
-        extra = record["extra"]
+        elif extra.get("exc_info"):
+            # Handle exc_info=True case by capturing current exception
+            import traceback
+            import sys
+            exc_info = sys.exc_info()
+            if exc_info[0] is not None:
+                log_entry["exception"] = {
+                    "type": exc_info[0].__name__,
+                    "message": str(exc_info[1]),
+                    "traceback": traceback.format_tb(exc_info[2]),
+                }
         if extra:
+            # Handle nested extra structure from loguru
+            if "extra" in extra and isinstance(extra["extra"], dict):
+                # Use the nested extra data
+                extra_data = extra["extra"]
+            else:
+                # Use the extra data directly
+                extra_data = extra
+            
             # Filter out loguru internal fields
-            extra_fields = {k: v for k, v in extra.items() 
+            extra_fields = {k: v for k, v in extra_data.items() 
                           if not k.startswith("_") and k not in 
                           ["request_id", "user_id", "api_key_id"]}
             if extra_fields:

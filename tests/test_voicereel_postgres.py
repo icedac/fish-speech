@@ -18,9 +18,15 @@ except ImportError:
     POSTGRES_AVAILABLE = False
 
 if POSTGRES_AVAILABLE:
-    from voicereel.db_postgres import PostgreSQLDatabase
-    from voicereel.server_postgres import VoiceReelPostgresServer
-    from voicereel.tasks_postgres import register_speaker, synthesize
+    try:
+        from voicereel.db_postgres import PostgreSQLDatabase
+        from voicereel.server_postgres import VoiceReelPostgresServer
+        from voicereel.tasks_postgres import register_speaker, synthesize
+    except ImportError as e:
+        # Handle import errors that might occur due to missing dependencies
+        POSTGRES_AVAILABLE = False
+        import warnings
+        warnings.warn(f"PostgreSQL tests disabled due to import error: {e}")
 
 
 @pytest.mark.skipif(not POSTGRES_AVAILABLE, reason="PostgreSQL dependencies not available")

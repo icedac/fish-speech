@@ -12,7 +12,15 @@ except ImportError:
     pytest.skip("voicereel module not available", allow_module_level=True)
 
 # Optional dependency for database validation
-psycopg2 = pytest.importorskip("psycopg2", minversion="2.8")
+try:
+    import psycopg2
+    # Check version manually since psycopg2 version string has extra info
+    version_parts = psycopg2.__version__.split()[0].split('.')
+    major, minor = int(version_parts[0]), int(version_parts[1])
+    if major < 2 or (major == 2 and minor < 8):
+        pytest.skip(f"psycopg2 version {psycopg2.__version__} is too old, need 2.8+", allow_module_level=True)
+except ImportError:
+    pytest.skip("psycopg2 not available", allow_module_level=True)
 
 SERVER_URL = os.getenv("VOICE_REEL_E2E_URL")
 DSN = os.getenv("VOICE_REEL_E2E_DSN")

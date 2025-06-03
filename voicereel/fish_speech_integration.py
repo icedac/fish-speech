@@ -19,8 +19,8 @@ from fish_speech.models.text2semantic.inference import (
     encode_tokens,
 )
 from fish_speech.models.vqgan.inference import load_model as load_vqgan_model
-from fish_speech.inference_engine.utils import load_audio
-from fish_speech.tokenizer import AutoTokenizer
+from fish_speech.inference_engine.reference_loader import ReferenceLoader
+from fish_speech.tokenizer import FishTokenizer
 
 
 class FishSpeechEngine:
@@ -50,8 +50,12 @@ class FishSpeechEngine:
             vqgan_config_name, vqgan_checkpoint_path
         )
         
-        # Initialize tokenizer
-        self.tokenizer = AutoTokenizer()
+        # Initialize tokenizer from LLaMA checkpoint
+        tokenizer_path = f"{llama_checkpoint_path}/tokenizer.tiktoken"
+        self.tokenizer = FishTokenizer(tokenizer_path)
+        
+        # Initialize reference loader for audio processing
+        self.reference_loader = ReferenceLoader()
         
         logger.info("Fish-Speech engine initialized successfully")
     
@@ -103,7 +107,7 @@ class FishSpeechEngine:
         """
         try:
             # Load and preprocess audio
-            audio_data = load_audio(audio_path, sr=self.sample_rate)
+            audio_data = self.reference_loader.load_audio(audio_path, self.sample_rate)
             
             # Convert to tensor and encode with VQGAN
             audio_tensor = torch.from_numpy(audio_data).to(self.device)

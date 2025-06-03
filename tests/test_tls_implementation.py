@@ -148,15 +148,21 @@ class TestVoiceReelHTTPSServer:
     def https_server(self, temp_cert_dir):
         """Create HTTPS server for testing."""
         # Mock database to avoid SQLite dependency
-        with patch('voicereel.https_server.sqlite3.connect'):
-            server = VoiceReelHTTPSServer(
-                host="127.0.0.1",
-                port=0,  # Auto-assign port
-                dsn=":memory:",
-                auto_generate_cert=True,
-                domain="localhost",
-                use_celery=False
-            )
+        with patch('voicereel.server.sqlite3.connect'):
+            # Patch the TLS manager to use temp directory
+            with patch('voicereel.https_server.get_tls_manager') as mock_get_manager:
+                from voicereel.tls_manager import TLSCertificateManager
+                mock_manager = TLSCertificateManager(cert_dir=temp_cert_dir)
+                mock_get_manager.return_value = mock_manager
+                
+                server = VoiceReelHTTPSServer(
+                    host="127.0.0.1",
+                    port=0,  # Auto-assign port
+                    dsn=":memory:",
+                    auto_generate_cert=True,
+                    domain="localhost",
+                    use_celery=False
+                )
             
             # Override cert directory
             server.tls_manager.cert_dir = Path(temp_cert_dir)
@@ -255,8 +261,9 @@ class TestVoiceReelHTTPSServerManager:
         }):
             manager = VoiceReelHTTPSServerManager()
             
-            with patch('voicereel.https_server.sqlite3.connect'):
-                server = manager.create_server_from_env()
+            with patch('voicereel.server.sqlite3.connect'):
+                with patch('voicereel.tls_manager.get_tls_manager'):
+                    server = manager.create_server_from_env()
                 
                 assert server.host == "0.0.0.0"
                 assert server.port == 9443

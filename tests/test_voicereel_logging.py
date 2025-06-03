@@ -42,8 +42,9 @@ class TestJSONLogger(unittest.TestCase):
     def test_json_log_format(self):
         """Test JSON log output format."""
         # Configure JSON logging to StringIO
-        configure_json_logging(enable_console=False)
-        logger.add(self.log_output, format="{message}")
+        from voicereel.json_logger import LoguruJSONSink
+        json_sink = LoguruJSONSink(stream=self.log_output)
+        logger.add(json_sink, format="{message}")
         
         # Log a test message
         logger.info("Test message", extra={"custom_field": "value"})
@@ -62,8 +63,9 @@ class TestJSONLogger(unittest.TestCase):
     
     def test_context_variables(self):
         """Test context variable logging."""
-        configure_json_logging(enable_console=False)
-        logger.add(self.log_output, format="{message}")
+        from voicereel.json_logger import LoguruJSONSink
+        json_sink = LoguruJSONSink(stream=self.log_output)
+        logger.add(json_sink, format="{message}")
         
         # Set context variables
         request_id.set("req-123")
@@ -88,8 +90,9 @@ class TestJSONLogger(unittest.TestCase):
     
     def test_exception_logging(self):
         """Test exception logging in JSON format."""
-        configure_json_logging(enable_console=False)
-        logger.add(self.log_output, format="{message}")
+        from voicereel.json_logger import LoguruJSONSink
+        json_sink = LoguruJSONSink(stream=self.log_output)
+        logger.add(json_sink, format="{message}")
         
         try:
             raise ValueError("Test exception")
@@ -107,8 +110,9 @@ class TestJSONLogger(unittest.TestCase):
     
     def test_performance_decorator(self):
         """Test performance logging decorator."""
-        configure_json_logging(enable_console=False)
-        logger.add(self.log_output, format="{message}")
+        from voicereel.json_logger import LoguruJSONSink
+        json_sink = LoguruJSONSink(stream=self.log_output)
+        logger.add(json_sink, format="{message}")
         
         @log_performance("test_operation")
         def slow_function():
@@ -136,8 +140,9 @@ class TestRequestLogger(unittest.TestCase):
         """Set up test environment."""
         self.log_output = StringIO()
         logger.remove()
-        configure_json_logging(enable_console=False)
-        logger.add(self.log_output, format="{message}")
+        from voicereel.json_logger import LoguruJSONSink
+        json_sink = LoguruJSONSink(stream=self.log_output)
+        logger.add(json_sink, format="{message}")
     
     def test_request_logging(self):
         """Test HTTP request logging."""
@@ -210,8 +215,9 @@ class TestAuditLogger(unittest.TestCase):
         """Set up test environment."""
         self.log_output = StringIO()
         logger.remove()
-        configure_json_logging(enable_console=False)
-        logger.add(self.log_output, format="{message}")
+        from voicereel.json_logger import LoguruJSONSink
+        json_sink = LoguruJSONSink(stream=self.log_output)
+        logger.add(json_sink, format="{message}")
     
     def test_authentication_logging(self):
         """Test authentication audit logging."""
