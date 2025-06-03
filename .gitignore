@@ -33,3 +33,4 @@ asr-label*
 *log
 .venv/
 .claude/
+.claude/settings.local.json
