@@ -134,19 +134,400 @@ We do not hold any responsibility for any illegal usage of the codebase. Please 
 
 
 
-# prerequites
-## miniconda
+# Prerequisites
+## Miniconda
 - https://www.anaconda.com/docs/getting-started/miniconda/main
 
-## model downloads
-```
+## Model Downloads
+```bash
 pip install -U "huggingface_hub[cli]"
 huggingface-cli download fishaudio/fish-speech-1.5 --local-dir checkpoints/fish-speech-1.5
 ```
-## test works
-```
+
+## Basic Test
+```bash
 python -m tools.run_webui \
     --llama-checkpoint-path "checkpoints/fish-speech-1.5" \
     --decoder-checkpoint-path "checkpoints/fish-speech-1.5/firefly-gan-vq-fsq-8x1024-21hz-generator.pth" \
     --decoder-config-name firefly_gan_vq
 ```
+
+# Local Testing Guide (VoiceReel Multi-Speaker TTS)
+
+## 🚀 Quick Start: Two-Speaker Dialogue Test
+
+This guide will help you test VoiceReel's multi-speaker TTS locally with a two-person dialogue example.
+
+### 1. Environment Setup
+
+```bash
+# Create conda environment
+conda create -n voicereel python=3.10
+conda activate voicereel
+
+# Install dependencies
+pip install -e ".[stable]"
+pip install redis celery psycopg2-binary boto3
+
+# Install Fish-Speech dependencies
+pip install torch torchaudio transformers gradio loguru
+
+# Download Fish-Speech models
+huggingface-cli download fishaudio/fish-speech-1.5 --local-dir checkpoints/fish-speech-1.5
+```
+
+### 2. Start Required Services
+
+#### Option A: Using Docker Compose (Recommended)
+```bash
+# Start PostgreSQL, Redis, and VoiceReel
+docker-compose -f docker-compose.dev.yml up -d
+```
+
+#### Option B: Manual Setup
+```bash
+# Terminal 1: Start Redis
+redis-server
+
+# Terminal 2: Start PostgreSQL (if not installed, use Docker)
+docker run -d --name voicereel-postgres \
+    -e POSTGRES_USER=voicereel \
+    -e POSTGRES_PASSWORD=voicereel \
+    -e POSTGRES_DB=voicereel \
+    -p 5432:5432 \
+    postgres:15-alpine
+
+# Terminal 3: Start Celery Worker
+export VR_POSTGRES_DSN="postgresql://voicereel:voicereel@localhost:5432/voicereel"
+export VR_REDIS_URL="redis://localhost:6379/0"
+celery -A voicereel.tasks worker --loglevel=info
+```
+
+### 3. Initialize Database
+
+```bash
+# Set database URL
+export VR_POSTGRES_DSN="postgresql://voicereel:voicereel@localhost:5432/voicereel"
+
+# Run migration
+python tools/migrate_to_postgres.py
+```
+
+### 4. Start VoiceReel Server
+
+```bash
+# Terminal 4: Start VoiceReel API Server
+export VR_POSTGRES_DSN="postgresql://voicereel:voicereel@localhost:5432/voicereel"
+export VR_REDIS_URL="redis://localhost:6379/0"
+export VR_API_KEY="test-api-key-12345"
+export VR_LOG_LEVEL="INFO"
+export VR_DEBUG="true"
+
+python -m voicereel.server_postgres
+```
+
+### 5. Prepare Reference Audio Files
+
+Create two reference audio files for your speakers:
+
+```bash
+# Create test audio directory
+mkdir -p test_audio
+
+# Record or download 30-second samples for each speaker
+# Speaker 1: Male voice (e.g., news anchor style)
+# Save as: test_audio/speaker1_male.wav
+
+# Speaker 2: Female voice (e.g., conversational style)  
+# Save as: test_audio/speaker2_female.wav
+
+# Create matching transcripts
+echo "안녕하세요. 저는 첫 번째 화자입니다. 오늘은 날씨가 정말 좋네요. 이 음성은 제 목소리 샘플입니다." > test_audio/speaker1_script.txt
+echo "반갑습니다. 저는 두 번째 화자예요. 맞아요, 정말 화창한 날씨네요. 제 목소리도 잘 들리시나요?" > test_audio/speaker2_script.txt
+```
+
+### 6. Register Speakers
+
+```python
+# test_register_speakers.py
+import requests
+import time
+
+API_URL = "http://localhost:8080"
+API_KEY = "test-api-key-12345"
+
+headers = {
+    "X-VR-APIKEY": API_KEY
+}
+
+# Register Speaker 1 (Male)
+with open("test_audio/speaker1_male.wav", "rb") as audio_file:
+    with open("test_audio/speaker1_script.txt", "r") as script_file:
+        files = {
+            "reference_audio": ("speaker1.wav", audio_file, "audio/wav"),
+        }
+        data = {
+            "name": "김민수 (남성 앵커)",
+            "lang": "ko",
+            "reference_script": script_file.read()
+        }
+        
+        response = requests.post(
+            f"{API_URL}/v1/speakers",
+            headers=headers,
+            files=files,
+            data=data
+        )
+        print("Speaker 1 Registration:", response.json())
+        speaker1_job = response.json()["job_id"]
+
+# Register Speaker 2 (Female)
+with open("test_audio/speaker2_female.wav", "rb") as audio_file:
+    with open("test_audio/speaker2_script.txt", "r") as script_file:
+        files = {
+            "reference_audio": ("speaker2.wav", audio_file, "audio/wav"),
+        }
+        data = {
+            "name": "이수진 (여성 진행자)",
+            "lang": "ko",
+            "reference_script": script_file.read()
+        }
+        
+        response = requests.post(
+            f"{API_URL}/v1/speakers",
+            headers=headers,
+            files=files,
+            data=data
+        )
+        print("Speaker 2 Registration:", response.json())
+        speaker2_job = response.json()["job_id"]
+
+# Wait for registration to complete
+print("\nWaiting for speaker registration...")
+time.sleep(10)
+
+# Check registration status
+for job_id in [speaker1_job, speaker2_job]:
+    response = requests.get(f"{API_URL}/v1/jobs/{job_id}", headers=headers)
+    print(f"Job {job_id} status:", response.json())
+
+# Get speaker list
+response = requests.get(f"{API_URL}/v1/speakers", headers=headers)
+speakers = response.json()["speakers"]
+print("\nRegistered speakers:")
+for speaker in speakers:
+    print(f"- {speaker['name']}: {speaker['id']}")
+```
+
+### 7. Test Two-Speaker Dialogue
+
+```python
+# test_dialogue.py
+import requests
+import json
+import time
+import subprocess
+
+API_URL = "http://localhost:8080"
+API_KEY = "test-api-key-12345"
+
+headers = {
+    "X-VR-APIKEY": API_KEY,
+    "Content-Type": "application/json"
+}
+
+# Get speaker IDs
+response = requests.get(f"{API_URL}/v1/speakers", headers=headers)
+speakers = response.json()["speakers"]
+speaker1_id = speakers[0]["id"]  # 김민수
+speaker2_id = speakers[1]["id"]  # 이수진
+
+# Create dialogue script
+dialogue_script = [
+    {"speaker_id": speaker1_id, "text": "안녕하세요, 시청자 여러분. 오늘의 날씨를 전해드리겠습니다."},
+    {"speaker_id": speaker2_id, "text": "네, 안녕하세요. 오늘은 전국적으로 맑은 날씨가 이어지겠습니다."},
+    {"speaker_id": speaker1_id, "text": "그렇군요. 미세먼지 상황은 어떤가요?"},
+    {"speaker_id": speaker2_id, "text": "다행히 미세먼지 농도는 '좋음' 수준을 유지하고 있어요. 야외 활동하기 좋은 날씨입니다."},
+    {"speaker_id": speaker1_id, "text": "좋은 소식이네요. 이번 주말 날씨는 어떨까요?"},
+    {"speaker_id": speaker2_id, "text": "주말에도 화창한 날씨가 계속될 예정입니다. 나들이 계획이 있으신 분들께는 희소식이네요."},
+    {"speaker_id": speaker1_id, "text": "감사합니다. 좋은 하루 보내세요!"},
+    {"speaker_id": speaker2_id, "text": "네, 여러분도 즐거운 하루 되세요!"}
+]
+
+# Request synthesis
+synthesis_request = {
+    "script": dialogue_script,
+    "output_format": "wav",
+    "sample_rate": 44100,
+    "caption_format": "vtt"
+}
+
+print("Requesting dialogue synthesis...")
+response = requests.post(
+    f"{API_URL}/v1/synthesize",
+    headers=headers,
+    json=synthesis_request
+)
+
+if response.status_code == 202:
+    job_id = response.json()["job_id"]
+    print(f"Synthesis job created: {job_id}")
+    
+    # Poll for completion
+    while True:
+        time.sleep(3)
+        response = requests.get(f"{API_URL}/v1/jobs/{job_id}", headers=headers)
+        job_status = response.json()
+        
+        print(f"Status: {job_status['status']}")
+        
+        if job_status["status"] == "succeeded":
+            audio_url = job_status["audio_url"]
+            captions = job_status["captions"]
+            
+            print(f"\n✅ Synthesis completed!")
+            print(f"Audio URL: {audio_url}")
+            
+            # Download audio file
+            audio_response = requests.get(audio_url)
+            with open("dialogue_output.wav", "wb") as f:
+                f.write(audio_response.content)
+            print("Audio saved as: dialogue_output.wav")
+            
+            # Save captions
+            with open("dialogue_output.vtt", "w") as f:
+                f.write(captions)
+            print("Captions saved as: dialogue_output.vtt")
+            
+            # Display dialogue timing
+            print("\nDialogue Timing:")
+            for caption in job_status.get("caption_data", []):
+                speaker_name = "김민수" if caption["speaker"] == speaker1_id else "이수진"
+                print(f"{caption['start']:.2f}s - {caption['end']:.2f}s [{speaker_name}]: {caption['text']}")
+            
+            # Play audio (macOS/Linux)
+            try:
+                if subprocess.run(["which", "afplay"], capture_output=True).returncode == 0:
+                    subprocess.run(["afplay", "dialogue_output.wav"])
+                elif subprocess.run(["which", "aplay"], capture_output=True).returncode == 0:
+                    subprocess.run(["aplay", "dialogue_output.wav"])
+                else:
+                    print("\n🎵 Please play 'dialogue_output.wav' with your audio player")
+            except:
+                print("\n🎵 Please play 'dialogue_output.wav' with your audio player")
+            
+            break
+            
+        elif job_status["status"] == "failed":
+            print(f"❌ Synthesis failed: {job_status.get('error', 'Unknown error')}")
+            break
+else:
+    print(f"❌ Request failed: {response.text}")
+```
+
+### 8. Alternative: Using VoiceReel Client
+
+```python
+# test_with_client.py
+from voicereel.client import VoiceReelClient
+import asyncio
+
+async def test_dialogue():
+    # Initialize client
+    client = VoiceReelClient(
+        base_url="http://localhost:8080",
+        api_key="test-api-key-12345"
+    )
+    
+    # Register speakers (if not already registered)
+    # ... (similar to above)
+    
+    # Get speakers
+    speakers = await client.get_speakers()
+    print("Available speakers:")
+    for speaker in speakers:
+        print(f"- {speaker['name']} ({speaker['id']})")
+    
+    # Create dialogue
+    dialogue = [
+        {"speaker_id": speakers[0]["id"], "text": "안녕하세요, 오늘의 뉴스입니다."},
+        {"speaker_id": speakers[1]["id"], "text": "네, 주요 소식을 전해드리겠습니다."},
+    ]
+    
+    # Synthesize
+    job_id = await client.synthesize(dialogue, output_format="wav")
+    print(f"Synthesis job: {job_id}")
+    
+    # Wait for completion
+    result = await client.wait_for_job(job_id)
+    
+    # Download audio
+    await client.download_audio(result["audio_url"], "client_output.wav")
+    print("✅ Audio saved as: client_output.wav")
+
+# Run the test
+asyncio.run(test_dialogue())
+```
+
+## 🔍 Troubleshooting
+
+### Common Issues
+
+1. **"Connection refused" error**
+   - Check if all services are running (Redis, PostgreSQL, Celery, API server)
+   - Verify ports are not in use: `lsof -i :8080,5432,6379`
+
+2. **"Speaker registration failed"**
+   - Ensure audio files are at least 30 seconds long
+   - Check audio format (WAV, 16kHz+ recommended)
+   - Verify transcript matches the audio content
+
+3. **"Synthesis takes too long"**
+   - Check GPU availability: `nvidia-smi`
+   - Monitor Celery worker logs for errors
+   - Reduce dialogue length for initial tests
+
+4. **"No audio output"**
+   - Check VoiceReel logs: `export VR_LOG_LEVEL=DEBUG`
+   - Verify Fish-Speech models are downloaded correctly
+   - Test with single speaker first
+
+### Debug Mode
+
+Enable detailed logging:
+```bash
+export VR_DEBUG=true
+export VR_LOG_LEVEL=DEBUG
+export VR_DEBUG_VERBOSE_LOGGING=true
+```
+
+View logs in real-time:
+```bash
+# API server logs
+tail -f voicereel.log
+
+# Celery worker logs
+celery -A voicereel.tasks worker --loglevel=debug
+```
+
+## 📊 Performance Tips
+
+1. **GPU Acceleration**
+   - Ensure CUDA is available: `python -c "import torch; print(torch.cuda.is_available())"`
+   - Use `export CUDA_VISIBLE_DEVICES=0` to specify GPU
+
+2. **Batch Processing**
+   - Process multiple dialogues in parallel
+   - Use Redis for distributed task processing
+
+3. **Audio Quality**
+   - Use high-quality reference audio (44.1kHz, 16-bit)
+   - Keep consistent recording conditions for speakers
+
+## 🎯 Next Steps
+
+- Test with more speakers (3-5 person conversation)
+- Try different languages (English, Japanese, Chinese)
+- Experiment with emotional expressions
+- Build a web UI for easier testing
+- Deploy to production with HTTPS
