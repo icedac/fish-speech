@@ -27,10 +27,10 @@
 
 ### 4. 보안 강화
 - [ ] TLS 1.3 인증서 설정
-- [ ] CORS 정책 구현
-- [ ] Rate limiting 미들웨어
-- [ ] SQL injection 방어 검증
-- [ ] 입력 데이터 검증 강화
+- [x] CORS 정책 구현
+- [x] Rate limiting 미들웨어
+- [x] SQL injection 방어 검증
+- [x] 입력 데이터 검증 강화
 
 ### 5. Docker 컨테이너화
 - [x] VoiceReel API Dockerfile 작성
@@ -98,7 +98,7 @@
 
 ## 📊 진행 상태
 
-**전체 진행률: 27% (32/120 작업 완료)**
+**전체 진행률: 30% (36/120 작업 완료)**
 
 ### 완료된 작업 ✅
 - [x] Flask 애플리케이션 구조
@@ -133,6 +133,10 @@
 - [x] 화자 등록 시 실제 음성 특징 추출
 - [x] 다중 화자 합성 실제 구현
 - [x] GPU 워커 풀 설정
+- [x] CORS 정책 구현
+- [x] Rate limiting 미들웨어
+- [x] SQL injection 방어 검증
+- [x] 입력 데이터 검증 강화
 
 ### 다음 스프린트 목표 (2주)
 1. ✅ Celery/Redis 통합 완료
