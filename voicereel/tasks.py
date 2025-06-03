@@ -13,6 +13,7 @@ from .caption import export_captions
 from .celery_app import app
 from .db import init_db
 from .fish_speech_integration import get_fish_speech_engine, get_speaker_manager
+from .s3_storage import get_storage_manager
 
 
 class DatabaseTask(Task):
@@ -163,25 +164,60 @@ def synthesize(
             output_format=output_format,
         )
 
-        # Save audio file
-        audio_path = os.path.join(tempfile.gettempdir(), f"{job_id}.{output_format}")
-        engine.save_audio(audio_data, audio_path, output_format)
+        # Save audio file to temporary location first
+        temp_audio_path = os.path.join(tempfile.gettempdir(), f"{job_id}.{output_format}")
+        engine.save_audio(audio_data, temp_audio_path, output_format)
 
-        # Export captions
+        # Export captions to temporary file
         caption_text = export_captions(caption_units, caption_format)
-        caption_path = os.path.join(tempfile.gettempdir(), f"{job_id}.{caption_format}")
-        with open(caption_path, "w", encoding="utf-8") as f:
+        temp_caption_path = os.path.join(tempfile.gettempdir(), f"{job_id}.{caption_format}")
+        with open(temp_caption_path, "w", encoding="utf-8") as f:
             f.write(caption_text)
+
+        # Upload files to S3 or local storage
+        storage_manager = get_storage_manager()
+        
+        # Upload audio file
+        audio_key = f"synthesis/{job_id}/audio.{output_format}"
+        audio_url = storage_manager.upload_file(
+            temp_audio_path,
+            key=audio_key,
+            metadata={
+                "job_id": job_id,
+                "type": "synthesis_audio",
+                "num_segments": str(len(script)),
+                "speakers": ",".join(unique_speakers),
+            }
+        )
+        
+        # Upload caption file
+        caption_key = f"synthesis/{job_id}/captions.{caption_format}"
+        caption_url = storage_manager.upload_file(
+            temp_caption_path,
+            key=caption_key,
+            metadata={
+                "job_id": job_id,
+                "type": "synthesis_captions",
+                "format": caption_format,
+            }
+        )
 
         # Calculate total duration
         total_duration = caption_units[-1]["end"] if caption_units else 0.0
+
+        # Clean up temporary files
+        try:
+            os.remove(temp_audio_path)
+            os.remove(temp_caption_path)
+        except Exception as e:
+            logger.warning(f"Failed to clean up temp files: {e}")
 
         # Update job with results
         cur.execute(
             """UPDATE jobs 
                SET status=?, audio_url=?, caption_path=?, caption_format=? 
                WHERE id=?""",
-            ("succeeded", audio_path, caption_path, caption_format, job_id),
+            ("succeeded", audio_url, caption_url, caption_format, job_id),
         )
 
         # Record usage
