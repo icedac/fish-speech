@@ -16,3 +16,33 @@ services:
               count: all
               capabilities: [gpu]
     command: tail -f /dev/null
+    environment:
+      - VR_POSTGRES_DSN=postgresql://voicereel:voicereel@postgres:5432/voicereel
+      - VR_REDIS_URL=redis://redis:6379/0
+    depends_on:
+      - postgres
+      - redis
+
+  postgres:
+    image: postgres:15-alpine
+    container_name: voicereel-postgres
+    environment:
+      - POSTGRES_USER=voicereel
+      - POSTGRES_PASSWORD=voicereel
+      - POSTGRES_DB=voicereel
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  redis:
+    image: redis:7-alpine
+    container_name: voicereel-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+
+volumes:
+  postgres_data:
+  redis_data:

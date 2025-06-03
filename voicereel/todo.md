@@ -32,14 +32,21 @@
 - [x] SQL injection 방어 검증
 - [x] 입력 데이터 검증 강화
 
-### 5. Docker 컨테이너화
+### 5. PostgreSQL Migration
+- [x] PostgreSQL 데이터베이스 스키마 구현
+- [x] 연결 풀링 및 트랜잭션 관리
+- [x] SQLite → PostgreSQL 마이그레이션 도구
+- [x] PostgreSQL 호환 서버 및 태스크 구현
+- [x] 테스트 및 문서화
+
+### 6. Docker 컨테이너화
 - [x] VoiceReel API Dockerfile 작성
 - [x] docker-compose.yml 구성 (API + Redis + PostgreSQL)
 - [x] GPU 지원 Docker 이미지 빌드
 - [x] 환경별 설정 분리 (.env 파일)
 - [x] Health check 엔드포인트 추가
 
-### 6. 에러 처리 및 로깅
+### 7. 에러 처리 및 로깅
 - [ ] 구조화된 로깅 시스템 (JSON 로그)
 - [ ] Sentry 에러 추적 연동
 - [ ] API 에러 응답 표준화
@@ -142,9 +149,17 @@
 - [x] Rate limiting 미들웨어
 - [x] SQL injection 방어 검증
 - [x] 입력 데이터 검증 강화
+<<<<<<< HEAD
+- [x] PostgreSQL 데이터베이스 스키마 구현
+- [x] 연결 풀링 및 트랜잭션 관리
+- [x] SQLite → PostgreSQL 마이그레이션 도구
+- [x] PostgreSQL 호환 서버 및 태스크 구현
+- [x] 테스트 및 문서화
+=======
 - [x] TLS 1.3 인증서 관리 시스템
 - [x] HTTPS 서버 구현 및 배포 설정
 - [x] Docker TLS 배포 구성
+>>>>>>> origin/main
 
 ### 다음 스프린트 목표 (2주)
 1. ✅ Celery/Redis 통합 완료
