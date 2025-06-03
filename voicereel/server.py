@@ -13,6 +13,7 @@ from datetime import datetime
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
 from .caption import export_captions
+from .security import SecurityMiddleware, InputValidator, get_client_ip
 from .s3_storage import get_storage_manager, parse_storage_url
 
 # Try to import Celery tasks
@@ -47,6 +48,12 @@ class VoiceReelServer:
         self.api_key = api_key or os.getenv("VR_API_KEY")
         self.hmac_secret = hmac_secret or os.getenv("VR_HMAC_SECRET")
         self.redis_url = redis_url or os.getenv("VR_REDIS_URL")
+        
+        # Initialize security middleware
+        from .security import RateLimiter, CORSHandler, APIKeyValidator, SecurityMiddleware
+        self.security_middleware = SecurityMiddleware(
+            api_key_validator=APIKeyValidator(self.api_key, self.hmac_secret)
+        )
 
         # Determine whether to use Celery
         if use_celery is None:
@@ -107,37 +114,39 @@ class VoiceReelServer:
             def _json(self, code: int, body: dict) -> None:
                 self.send_response(code)
                 self.send_header("Content-Type", "application/json")
+                server.security_middleware.add_response_headers(self)
                 self.end_headers()
                 self.wfile.write(json.dumps(body).encode())
 
             def _error(self, code: int, name: str) -> None:
                 self._json(code, {"error": name})
 
-            def _require_key(self, body: bytes = b"") -> bool:
-                if server.api_key:
-                    if self.headers.get("X-VR-APIKEY") != server.api_key:
-                        self._error(401, "UNAUTHORIZED")
-                        return False
-                    if server.hmac_secret:
-                        import hashlib
-                        import hmac
-
-                        expected = hmac.new(
-                            server.hmac_secret.encode(), body, hashlib.sha256
-                        ).hexdigest()
-                        if self.headers.get("X-VR-SIGN") != expected:
-                            self._error(401, "UNAUTHORIZED")
-                            return False
-                return True
+            def _check_security(self, body: bytes = b"") -> bool:
+                """Check security middleware (rate limiting, auth, etc.)."""
+                allowed, error_info = server.security_middleware.process_request(self, body)
+                if not allowed and error_info:
+                    if error_info.get("error") == "RATE_LIMIT_EXCEEDED":
+                        self._json(429, error_info)
+                    else:
+                        self._json(401, error_info)
+                    return False
+                return allowed
 
             def do_GET(self):
-                if not self._require_key():
+                if not self._check_security():
                     return
                 if self.path == "/health":
-                    self.send_response(200)
-                    self.send_header("Content-Type", "application/json")
-                    self.end_headers()
-                    self.wfile.write(b'{"status":"ok"}')
+                    health_data = {
+                        "status": "ok",
+                        "security": {
+                            "rate_limiting_enabled": True,
+                            "cors_enabled": True,
+                            "input_validation_enabled": True,
+                            "api_key_required": bool(server.api_key),
+                            "hmac_verification": bool(server.hmac_secret),
+                        }
+                    }
+                    self._json(200, health_data)
                 elif self.path.startswith("/v1/jobs/"):
                     job_id = self.path.rsplit("/", 1)[-1]
                     cur = server.db.cursor()
@@ -207,7 +216,7 @@ class VoiceReelServer:
                     self._error(404, "NOT_FOUND")
 
             def do_DELETE(self):
-                if not self._require_key():
+                if not self._check_security():
                     return
                 if self.path.startswith("/v1/jobs/"):
                     job_id = self.path.rsplit("/", 1)[-1]
@@ -240,7 +249,7 @@ class VoiceReelServer:
                     _ = self.rfile.read(length)
                     return
                 raw = self.rfile.read(length)
-                if not self._require_key(raw):
+                if not self._check_security(raw):
                     return
                 if self.path == "/v1/speakers":
                     content_type = self.headers.get("Content-Type", "")
@@ -258,6 +267,24 @@ class VoiceReelServer:
                             
                             if not audio_path:
                                 self._error(400, "INVALID_INPUT")
+                                return
+                            
+                            # Validate inputs using security middleware
+                            validator = server.security_middleware.input_validator
+                            
+                            valid, error = validator.validate_speaker_name(name)
+                            if not valid:
+                                self._json(400, {"error": "INVALID_INPUT", "message": error})
+                                return
+                            
+                            valid, error = validator.validate_language_code(lang)
+                            if not valid:
+                                self._json(400, {"error": "INVALID_INPUT", "message": error})
+                                return
+                            
+                            valid, error = validator.validate_script_text(script)
+                            if not valid:
+                                self._json(400, {"error": "INVALID_INPUT", "message": error})
                                 return
                                 
                         except Exception as e:
@@ -277,18 +304,27 @@ class VoiceReelServer:
                         lang = payload.get("lang", "en")
                         audio_path = "dummy.wav"  # Dummy for backward compatibility
                         
+                        # Validate inputs using security middleware
+                        validator = server.security_middleware.input_validator
+                        
+                        valid, error = validator.validate_speaker_name(name)
+                        if not valid:
+                            self._json(400, {"error": "INVALID_INPUT", "message": error})
+                            return
+                        
+                        valid, error = validator.validate_language_code(lang)
+                        if not valid:
+                            self._json(400, {"error": "INVALID_INPUT", "message": error})
+                            return
+                        
+                        valid, error = validator.validate_script_text(script)
+                        if not valid:
+                            self._json(400, {"error": "INVALID_INPUT", "message": error})
+                            return
+                        
                         if duration < 30:
                             self._error(422, "INSUFFICIENT_REF")
                             return
-
-                    # Validate inputs
-                    allowed_langs = {"en", "ko", "ja", "zh"}
-                    if lang not in allowed_langs:
-                        self._error(400, "INVALID_INPUT")
-                        return
-                    if not script:
-                        self._error(400, "INVALID_INPUT")
-                        return
 
                     cur = server.db.cursor()
                     cur.execute(
@@ -343,8 +379,25 @@ class VoiceReelServer:
 
                     script = payload.get("script")
                     caption_format = payload.get("caption_format", "json")
-                    if not isinstance(script, list) or not script:
-                        self._error(400, "INVALID_INPUT")
+                    output_format = payload.get("output_format", "wav")
+                    sample_rate = payload.get("sample_rate", 48000)
+                    
+                    # Validate inputs using security middleware
+                    validator = server.security_middleware.input_validator
+                    
+                    valid, error = validator.validate_synthesis_script(script)
+                    if not valid:
+                        self._json(400, {"error": "INVALID_INPUT", "message": error})
+                        return
+                    
+                    valid, error = validator.validate_output_format(output_format)
+                    if not valid:
+                        self._json(400, {"error": "INVALID_INPUT", "message": error})
+                        return
+                    
+                    valid, error = validator.validate_sample_rate(sample_rate)
+                    if not valid:
+                        self._json(400, {"error": "INVALID_INPUT", "message": error})
                         return
 
                     job_id = str(uuid.uuid4())
