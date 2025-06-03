@@ -1,0 +1,152 @@
+version: '3.8'
+
+services:
+  fish-speech-https:
+    build:
+      context: .
+      dockerfile: dockerfile.prod
+    container_name: voicereel-https
+    ports:
+      - "8443:8443"  # HTTPS port
+      - "8080:8080"  # HTTP port (for redirect/health checks)
+    volumes:
+      - ./:/exp
+      - voicereel_certs:/etc/voicereel/certs
+      - /etc/letsencrypt:/etc/letsencrypt:ro  # For Let's Encrypt certificates
+    environment:
+      # HTTPS Configuration
+      - VOICEREEL_ENABLE_HTTPS=true
+      - VOICEREEL_HTTPS_PORT=8443
+      - VOICEREEL_HTTP_PORT=8080
+      - VOICEREEL_AUTO_GENERATE_CERT=true
+      - VOICEREEL_DOMAIN=${VOICEREEL_DOMAIN:-localhost}
+      - VOICEREEL_TLS_VERSION=TLSv1.3
+      
+      # Certificate paths (override for production)
+      - VOICEREEL_CERT_PATH=${VOICEREEL_CERT_PATH:-}
+      - VOICEREEL_KEY_PATH=${VOICEREEL_KEY_PATH:-}
+      - VOICEREEL_CERT_DIR=/etc/voicereel/certs
+      
+      # Database and Redis
+      - VR_POSTGRES_DSN=postgresql://voicereel:voicereel@postgres:5432/voicereel
+      - VR_REDIS_URL=redis://redis:6379/0
+      
+      # API Security
+      - VR_API_KEY=${VR_API_KEY:-}
+      - VR_HMAC_SECRET=${VR_HMAC_SECRET:-}
+      
+      # Performance
+      - VOICEREEL_USE_OPTIMIZED=true
+      - VOICEREEL_USE_FP16=true
+      - VOICEREEL_ENABLE_COMPILE=true
+      - VOICEREEL_MAX_WORKERS=4
+      
+      # Storage
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID:-}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY:-}
+      - AWS_DEFAULT_REGION=${AWS_DEFAULT_REGION:-us-east-1}
+      - VR_S3_BUCKET=${VR_S3_BUCKET:-}
+      
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    depends_on:
+      - postgres
+      - redis
+    command: python -m voicereel.https_server
+    healthcheck:
+      test: ["CMD", "curl", "-k", "-f", "https://localhost:8443/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  nginx-proxy:
+    image: nginx:alpine
+    container_name: voicereel-nginx
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/ssl.conf:/etc/nginx/ssl.conf:ro
+      - voicereel_certs:/etc/nginx/certs:ro
+      - /etc/letsencrypt:/etc/letsencrypt:ro
+    depends_on:
+      - fish-speech-https
+    command: |
+      sh -c "
+        # Wait for certificates to be available
+        while [ ! -f /etc/nginx/certs/voicereel.crt ]; do
+          echo 'Waiting for SSL certificates...'
+          sleep 5
+        done
+        nginx -g 'daemon off;'
+      "
+
+  postgres:
+    image: postgres:15-alpine
+    container_name: voicereel-postgres
+    environment:
+      - POSTGRES_USER=voicereel
+      - POSTGRES_PASSWORD=voicereel
+      - POSTGRES_DB=voicereel
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  redis:
+    image: redis:7-alpine
+    container_name: voicereel-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+
+  certbot:
+    image: certbot/certbot
+    container_name: voicereel-certbot
+    volumes:
+      - /etc/letsencrypt:/etc/letsencrypt
+      - /var/www/certbot:/var/www/certbot
+      - voicereel_certs:/etc/voicereel/certs
+    entrypoint: |
+      sh -c "
+        # Only run if domain is set and not localhost
+        if [ '${VOICEREEL_DOMAIN:-localhost}' != 'localhost' ] && [ -n '${LETSENCRYPT_EMAIL:-}' ]; then
+          echo 'Obtaining Let\'s Encrypt certificate for ${VOICEREEL_DOMAIN}'
+          certbot certonly --webroot -w /var/www/certbot \
+            --email ${LETSENCRYPT_EMAIL} \
+            --agree-tos --no-eff-email \
+            -d ${VOICEREEL_DOMAIN} || true
+          
+          # Copy certificates to VoiceReel cert directory
+          if [ -f /etc/letsencrypt/live/${VOICEREEL_DOMAIN}/fullchain.pem ]; then
+            cp /etc/letsencrypt/live/${VOICEREEL_DOMAIN}/fullchain.pem /etc/voicereel/certs/voicereel.crt
+            cp /etc/letsencrypt/live/${VOICEREEL_DOMAIN}/privkey.pem /etc/voicereel/certs/voicereel.key
+            chmod 644 /etc/voicereel/certs/voicereel.crt
+            chmod 600 /etc/voicereel/certs/voicereel.key
+            echo 'Let\'s Encrypt certificates copied to VoiceReel'
+          fi
+        else
+          echo 'Skipping Let\'s Encrypt - using self-signed certificates'
+        fi
+        
+        # Keep container running for renewal
+        while :; do
+          sleep 12h
+          if [ '${VOICEREEL_DOMAIN:-localhost}' != 'localhost' ]; then
+            certbot renew --quiet
+          fi
+        done
+      "
+
+volumes:
+  postgres_data:
+  redis_data:
+  voicereel_certs:
