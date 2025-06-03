@@ -13,6 +13,12 @@ from .caption import export_captions
 from .celery_app import app
 from .db import init_db
 from .fish_speech_integration import get_fish_speech_engine, get_speaker_manager
+# Try to import optimized engine
+try:
+    from .fish_speech_optimized import get_optimized_engine
+    OPTIMIZED_ENGINE_AVAILABLE = True
+except ImportError:
+    OPTIMIZED_ENGINE_AVAILABLE = False
 from .s3_storage import get_storage_manager
 
 
@@ -53,15 +59,27 @@ def register_speaker(
 
         logger.info(f"Starting speaker registration for job {job_id}, speaker {speaker_id}")
 
-        # Get Fish-Speech engine and speaker manager
-        engine = get_fish_speech_engine()
-        speaker_manager = get_speaker_manager()
+        # Use optimized engine if available
+        use_optimized = OPTIMIZED_ENGINE_AVAILABLE and os.getenv("VOICEREEL_USE_OPTIMIZED", "true").lower() == "true"
+        
+        if use_optimized:
+            logger.info("Using optimized Fish-Speech engine for feature extraction")
+            engine = get_optimized_engine()
+            speaker_manager = get_speaker_manager()
+        else:
+            # Get regular Fish-Speech engine and speaker manager
+            engine = get_fish_speech_engine()
+            speaker_manager = get_speaker_manager()
 
         # Extract speaker features from reference audio
         if not os.path.exists(audio_path):
             raise FileNotFoundError(f"Reference audio file not found: {audio_path}")
 
-        features = engine.extract_speaker_features(audio_path, script)
+        # Extract features using optimized method if available
+        if use_optimized and hasattr(engine, 'extract_speaker_features_fast'):
+            features = engine.extract_speaker_features_fast(audio_path, script, use_chunking=True)
+        else:
+            features = engine.extract_speaker_features(audio_path, script)
         
         # Save speaker features to storage
         feature_path = speaker_manager.save_speaker_features(speaker_id, features)
@@ -132,9 +150,17 @@ def synthesize(
 
         logger.info(f"Starting synthesis for job {job_id} with {len(script)} segments")
 
-        # Get Fish-Speech engine and speaker manager
-        engine = get_fish_speech_engine()
-        speaker_manager = get_speaker_manager()
+        # Use optimized engine if available
+        use_optimized = OPTIMIZED_ENGINE_AVAILABLE and os.getenv("VOICEREEL_USE_OPTIMIZED", "true").lower() == "true"
+        
+        if use_optimized:
+            logger.info("Using optimized Fish-Speech engine for better performance")
+            engine = get_optimized_engine()
+            speaker_manager = get_speaker_manager()
+        else:
+            # Get regular Fish-Speech engine and speaker manager
+            engine = get_fish_speech_engine()
+            speaker_manager = get_speaker_manager()
 
         # Load speaker features for all speakers in script
         speaker_features = {}
@@ -158,11 +184,25 @@ def synthesize(
                 raise ValueError(f"Speaker {speaker_id} not found or invalid")
 
         # Synthesize speech using Fish-Speech
-        audio_data, caption_units = engine.synthesize_speech(
-            script=script,
-            speaker_features=speaker_features,
-            output_format=output_format,
-        )
+        synthesis_start = time.time()
+        
+        if use_optimized and hasattr(engine, 'synthesize_speech_optimized'):
+            # Use optimized synthesis method
+            audio_data, caption_units = engine.synthesize_speech_optimized(
+                script=script,
+                speaker_features=speaker_features,
+                output_format=output_format,
+                use_parallel=True,  # Enable parallel processing
+            )
+        else:
+            # Use regular synthesis method
+            audio_data, caption_units = engine.synthesize_speech(
+                script=script,
+                speaker_features=speaker_features,
+                output_format=output_format,
+            )
+        
+        synthesis_time = time.time() - synthesis_start
 
         # Save audio file to temporary location first
         temp_audio_path = os.path.join(tempfile.gettempdir(), f"{job_id}.{output_format}")
@@ -227,7 +267,16 @@ def synthesize(
         )
         self.db.commit()
 
-        logger.info(f"Synthesis completed for job {job_id}. Duration: {total_duration:.2f}s")
+        # Log performance metrics
+        rtf = synthesis_time / total_duration if total_duration > 0 else float('inf')
+        logger.info(f"Synthesis completed for job {job_id}.")
+        logger.info(f"  Duration: {total_duration:.2f}s")
+        logger.info(f"  Synthesis time: {synthesis_time:.2f}s")
+        logger.info(f"  Real-time factor: {rtf:.2f}")
+        
+        # Check if we meet performance target
+        if total_duration >= 30 and synthesis_time <= 8:
+            logger.success("✅ Performance target achieved: 30s audio in ≤8s!")
 
         return {
             "status": "succeeded",
